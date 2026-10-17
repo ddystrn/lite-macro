@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Compile Resource",
+      "type": "shell",
+      "command": "windres",
+      "args": ["${fileDirname}/resource.rc", "-o", "${fileDirname}/resource.o"]
+    },
+    {
+      "label": "Build Lite Macro with Icon",
+      "type": "shell",
+      "command": "g++",
+      "args": [
+        "-O2",
+        "-mwindows",
+        "${fileDirname}/main.cpp",
+        "${fileDirname}/resource.o",
+        "-o",
+        "${fileDirname}/tinytask_lite.exe",
+        "-luser32",
+        "-lgdi32",
+        "-lcomdlg32"
+      ],
+      "dependsOn": "1. Compile Resource",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}

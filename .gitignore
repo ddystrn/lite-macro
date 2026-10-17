@@ -1,0 +1,6 @@
+# Binary / Build output
+*.exe
+*.txt
+*.ini
+*.o
+.vs/
