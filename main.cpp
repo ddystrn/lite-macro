@@ -1094,6 +1094,49 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
             }
         }
+        else if (wmId == ID_BTN_UPDATE_ACT) {
+            int selActionIdx = (int)SendMessage(hLstActions, LB_GETCURSEL, 0, 0);
+            int selPointIdx = (int)SendMessage(hLstDragPoints, LB_GETCURSEL, 0, 0);
+
+            if (selActionIdx >= 0 && selActionIdx < (int)g_events.size()) {
+                wchar_t bufX[32], bufY[32], bufDelay[32];
+                GetWindowTextW(hEditX, bufX, 32);
+                GetWindowTextW(hEditY, bufY, 32);
+                GetWindowTextW(hEditDelay, bufDelay, 32);
+
+                int newX = _wtoi(bufX);
+                int newY = _wtoi(bufY);
+                double newDelay = _wtof(bufDelay);
+
+                // Cek apakah yang sedang dipilih adalah titik path dari Drag atau aksi utama
+                if (selPointIdx >= 0 && selPointIdx < (int)g_events[selActionIdx].path.size()) {
+                    // Update titik path tertentu pada aksi Drag
+                    g_events[selActionIdx].path[selPointIdx].x = newX;
+                    g_events[selActionIdx].path[selPointIdx].y = newY;
+                    g_events[selActionIdx].path[selPointIdx].delay = newDelay;
+
+                    PopulateDragPointsList(g_events[selActionIdx]);
+                    SendMessage(hLstDragPoints, LB_SETCURSEL, selPointIdx, 0);
+                } else {
+                    // Update aksi utama (Click atau posisi akhir Drag)
+                    if (g_events[selActionIdx].type == ACTION_CLICK) {
+                        g_events[selActionIdx].end_x = newX;
+                        g_events[selActionIdx].end_y = newY;
+                    } else if (g_events[selActionIdx].type == ACTION_DRAG) {
+                        g_events[selActionIdx].end_x = newX;
+                        g_events[selActionIdx].end_y = newY;
+                    }
+                    g_events[selActionIdx].delay = newDelay;
+
+                    PopulateActionList();
+                    SendMessage(hLstActions, LB_SETCURSEL, selActionIdx, 0);
+                }
+
+                g_editorHasChanges = true;
+            } else {
+                MessageBoxW(hwnd, L"Pilih terlebih dahulu aksi yang ingin di-update dari daftar!", L"Peringatan", MB_OK | MB_ICONWARNING);
+            }
+        }
         else if (wmId == ID_BTN_EDITOR_PICK_COORD) {
             if (!g_isEditorPickingCoord) {
                 g_isEditorPickingCoord = true;
@@ -1283,14 +1326,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hChkAlwaysTop = CreateWindow(L"BUTTON", L"Always on Top", WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX, 12, 172, 160, 20, hwnd, (HMENU)ID_CHK_ALWAYS_TOP, NULL, NULL);
 
-        // Posisi Tombol Save Macro di kiri (12) dan Load Macro di kanan (144)
         hBtnSave = CreateWindow(L"BUTTON", L"Save Macro", WS_VISIBLE | WS_CHILD, 12, 196, 124, 26, hwnd, (HMENU)ID_BTN_SAVE, NULL, NULL);
         hBtnLoad = CreateWindow(L"BUTTON", L"Load Macro", WS_VISIBLE | WS_CHILD, 144, 196, 124, 26, hwnd, (HMENU)ID_BTN_LOAD, NULL, NULL);
         
         hBtnEdit = CreateWindow(L"BUTTON", L"Edit Script", WS_VISIBLE | WS_CHILD, 12, 226, 256, 28, hwnd, (HMENU)ID_BTN_EDIT, NULL, NULL);
         hBtnTogglePicker = CreateWindow(L"BUTTON", L"Mouse Picker", WS_VISIBLE | WS_CHILD, 12, 258, 256, 28, hwnd, (HMENU)ID_BTN_TOGGLE_PICKER, NULL, NULL);
 
-        // --- Kontrol Mouse Picker ---
         CreateWindowW(L"STATIC", L"X:", WS_CHILD, 12, 294, 16, 20, hwnd, NULL, NULL, NULL);
         mp_hTextX = CreateWindowW(L"EDIT", L"100", WS_CHILD | WS_BORDER | ES_NUMBER, 30, 292, 48, 23, hwnd, NULL, NULL, NULL);
         CreateWindowW(L"STATIC", L"Y:", WS_CHILD, 86, 294, 16, 20, hwnd, NULL, NULL, NULL);
