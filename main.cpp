@@ -53,10 +53,9 @@
 #define ID_LST_DRAG_POINTS 210
 #define ID_BTN_EDITOR_PICK_COORD 211
 
-// ID Hotkey Global Lite Macro
+// ID Hotkey Global Lite Macro (ESC dihapus)
 #define HOTKEY_F8 1
 #define HOTKEY_F9 2
-#define HOTKEY_ESC 3
 #define HOTKEY_F10 4
 
 enum ActionType { ACTION_CLICK, ACTION_DRAG };
@@ -595,7 +594,7 @@ void StartRecording() {
 
     g_currentScriptName = L"Hasil Rekaman Baru";
     SetWindowText(hScriptLabel, (L"Script: " + g_currentScriptName).c_str());
-    SetWindowText(hStatusLabel, L"Status: Merekam... (F8/Esc: Stop)");
+    SetWindowText(hStatusLabel, L"Status: Merekam... (F8: Stop)");
 
     UpdateRecButtonUI(true);
     EnableWindow(hBtnPlay, FALSE);
@@ -922,7 +921,6 @@ void SetActionEditControlsState(bool enable) {
     if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, enable ? TRUE : FALSE);
 }
 
-// Fungsi untuk mengatur status enable/disable tombol Naik, Turun, Ambil Koordinat, Hapus Aksi
 void SetActionListOperationButtonsState(bool enable, bool enablePickCoord = true) {
     if (hBtnMoveUp) EnableWindow(hBtnMoveUp, enable ? TRUE : FALSE);
     if (hBtnMoveDown) EnableWindow(hBtnMoveDown, enable ? TRUE : FALSE);
@@ -957,7 +955,7 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         ClearActionEditFields();
         if (hLstDragPoints) SendMessage(hLstDragPoints, LB_RESETCONTENT, 0, 0);
         ResizeEditorDialog(hDlg, false);
-        SetActionListOperationButtonsState(false, false); // Disable semua tombol aksi jika tidak ada yang dipilih
+        SetActionListOperationButtonsState(false, false);
         return;
     }
 
@@ -969,8 +967,6 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         PopulateDragPointsList(evt);
         SetActionEditControlsState(false);
         ClearActionEditFields();
-        
-        // Ketika drag dipilih, tombol Naik, Turun, Hapus di-enable, tapi Ambil Koordinat didisable (sampai detail path dipilih)
         SetActionListOperationButtonsState(true, false);
     } else {
         ResizeEditorDialog(hDlg, false);
@@ -991,7 +987,6 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         swprintf_s(buf, 64, L"%.2f", evt.delay);
         SetWindowTextW(hEditDelay, buf);
 
-        // Ketika selain drag dipilih, semua tombol operasi list (termasuk Ambil Koordinat) menjadi enable
         SetActionListOperationButtonsState(true, true);
     }
 }
@@ -1056,8 +1051,6 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
 
         PopulateActionList();
-
-        // Secara default, tombol-tombol operasi list di-disable sebelum ada item yang dipilih
         SetActionListOperationButtonsState(false, false);
         break;
     }
@@ -1095,7 +1088,6 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     swprintf_s(buf, 64, L"%.2f", pt.delay);
                     SetWindowTextW(hEditDelay, buf);
 
-                    // Ketika salah satu detail jalur drag dipilih, tombol Ambil Koordinat menjadi enable
                     if (hBtnEditorPickCoord) EnableWindow(hBtnEditorPickCoord, TRUE);
                 }
             }
@@ -1254,7 +1246,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         RegisterHotKey(hwnd, HOTKEY_F8, 0, VK_F8);
         RegisterHotKey(hwnd, HOTKEY_F9, 0, VK_F9);
-        RegisterHotKey(hwnd, HOTKEY_ESC, 0, VK_ESCAPE);
         RegisterHotKey(hwnd, HOTKEY_F10, 0, VK_F10);
 
         g_hFontSegoeUI = CreateFont(
@@ -1510,10 +1501,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (g_isPlaying) StopPlaying();
             else if (!g_isRecording) PlayMacro();
         }
-        else if (wParam == HOTKEY_ESC) {
-            if (g_isRecording) StopRecording();
-            if (g_isPlaying) StopPlaying();
-        }
         else if (wParam == HOTKEY_F10) {
             if (g_isPlaying) {
                 PausePlaying();
@@ -1536,7 +1523,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         mp_isRunning = false;
         UnregisterHotKey(hwnd, HOTKEY_F8);
         UnregisterHotKey(hwnd, HOTKEY_F9);
-        UnregisterHotKey(hwnd, HOTKEY_ESC);
         UnregisterHotKey(hwnd, HOTKEY_F10);
         if (g_hFontSegoeUI) DeleteObject(g_hFontSegoeUI);
         if (mp_mouseHook) UnhookWindowsHookEx(mp_mouseHook);
