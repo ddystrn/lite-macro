@@ -864,6 +864,7 @@ void LoadMacro() {
     OPENFILENAME ofn = { 0 };
     wchar_t szFile[260] = { 0 };
     ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hMainWnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
     ofn.lpstrFilter = L"Macro Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
