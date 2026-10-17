@@ -4,6 +4,7 @@
 
 #define OEMRESOURCE
 #include <windows.h>
+#include <commctrl.h>
 #include <commdlg.h>
 #include <vector>
 #include <string>
@@ -97,6 +98,7 @@ wchar_t g_iniPath[MAX_PATH] = { 0 };
 bool g_hasUnsavedChanges = false;
 bool g_editorHasChanges = false;
 bool g_isPickerExpanded = false;
+bool g_isProgrammaticChange = false;
 
 // Variabel Mouse Picker
 std::atomic<bool> mp_isRunning(false);
@@ -125,7 +127,7 @@ HWND hGroupLoop, hLblLoopStatic, hLblSpeedStatic;
 
 // Handle UI Editor Dialog
 HWND hLstActions = NULL, hEditX = NULL, hEditY = NULL, hEditDelay = NULL, hBtnUpdateAct = NULL, hBtnDeleteAct = NULL, hBtnMoveUp = NULL, hBtnMoveDown = NULL;
-HWND hTitleDragDetail = NULL, hLstDragPoints = NULL;
+HWND hTitleDragDetail = NULL, hLstDragPoints = NULL, hBtnEditorSaveClose = NULL;
 
 // Handle UI Mouse Picker
 HWND mp_hTextX, mp_hTextY, mp_hHexColor, mp_hStatus, mp_hConfigStatus, mp_hBtnStart, mp_hBtnLoadConfig, mp_hBtnSaveConfig, mp_hBtnPickCoord, mp_hBtnPickColor, mp_hBtnPickBoth;
@@ -149,6 +151,8 @@ void ClearActionEditFields();
 void EnableGlobalCrosshair(bool enable);
 void SavePickerConfig();
 void LoadPickerConfig();
+void SetActionEditControlsState(bool enable);
+void SetActionListOperationButtonsState(bool enable, bool enablePickCoord);
 
 // Mouse Picker Helper Functions
 std::wstring ColorToHex(COLORREF color) {
@@ -921,7 +925,7 @@ void SetActionEditControlsState(bool enable) {
     if (hEditX) EnableWindow(hEditX, enable ? TRUE : FALSE);
     if (hEditY) EnableWindow(hEditY, enable ? TRUE : FALSE);
     if (hEditDelay) EnableWindow(hEditDelay, enable ? TRUE : FALSE);
-    if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, enable ? TRUE : FALSE);
+    if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, FALSE);
 }
 
 void SetActionListOperationButtonsState(bool enable, bool enablePickCoord = true) {
@@ -932,9 +936,11 @@ void SetActionListOperationButtonsState(bool enable, bool enablePickCoord = true
 }
 
 void ClearActionEditFields() {
+    g_isProgrammaticChange = true;
     if (hEditX) SetWindowText(hEditX, L"");
     if (hEditY) SetWindowText(hEditY, L"");
     if (hEditDelay) SetWindowText(hEditDelay, L"");
+    g_isProgrammaticChange = false;
 }
 
 void ResizeEditorDialog(HWND hwnd, bool expand) {
@@ -958,6 +964,8 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         ClearActionEditFields();
         if (hLstDragPoints) SendMessage(hLstDragPoints, LB_RESETCONTENT, 0, 0);
         ResizeEditorDialog(hDlg, false);
+        SetActionEditControlsState(false);
+        if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, FALSE);
         SetActionListOperationButtonsState(false, false);
         return;
     }
@@ -969,13 +977,18 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         ResizeEditorDialog(hDlg, true);
         PopulateDragPointsList(evt);
         SetActionEditControlsState(false);
+        if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, FALSE);
         ClearActionEditFields();
         SetActionListOperationButtonsState(true, false);
     } else {
         ResizeEditorDialog(hDlg, false);
         if (hLstDragPoints) SendMessage(hLstDragPoints, LB_RESETCONTENT, 0, 0);
 
-        SetActionEditControlsState(true);
+        g_isProgrammaticChange = true;
+        if (hEditX) EnableWindow(hEditX, TRUE);
+        if (hEditY) EnableWindow(hEditY, TRUE);
+        if (hEditDelay) EnableWindow(hEditDelay, TRUE);
+        if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, FALSE);
 
         int posX = (evt.type == ACTION_DRAG) ? evt.start_x : evt.end_x;
         int posY = (evt.type == ACTION_DRAG) ? evt.start_y : evt.end_y;
@@ -990,6 +1003,7 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         wchar_t bufDelay[64];
         swprintf_s(bufDelay, 64, L"%g", evt.delay);
         SetWindowTextW(hEditDelay, bufDelay);
+        g_isProgrammaticChange = false;
 
         SetActionListOperationButtonsState(true, true);
     }
@@ -1008,6 +1022,18 @@ void CommitEditorChanges() {
 void CancelEditorChanges() {
     g_events = g_eventsBackup;
     g_editorHasChanges = false;
+}
+
+// Subclass untuk menangkap Enter pada Textbox
+LRESULT CALLBACK EditXySubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
+        HWND hParent = GetParent(hwnd);
+        if (hParent) {
+            SendMessage(hParent, WM_COMMAND, MAKEWPARAM(ID_BTN_UPDATE_ACT, BN_CLICKED), (LPARAM)hBtnUpdateAct);
+        }
+        return 0;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -1047,14 +1073,24 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         hBtnEditorPickCoord = CreateWindow(L"BUTTON", L"Ambil Koordinat", WS_VISIBLE | WS_CHILD, 136, 260, 96, 26, hwnd, (HMENU)ID_BTN_EDITOR_PICK_COORD, NULL, NULL);
         hBtnDeleteAct = CreateWindow(L"BUTTON", L"Hapus Aksi", WS_VISIBLE | WS_CHILD, 236, 260, 78, 26, hwnd, (HMENU)ID_BTN_DELETE_ACT, NULL, NULL);
         
-        HWND btnSaveClose = CreateWindow(L"BUTTON", L"Simpan", WS_VISIBLE | WS_CHILD, 318, 260, 82, 26, hwnd, (HMENU)ID_BTN_SAVE_CLOSE, NULL, NULL);
+        hBtnEditorSaveClose = CreateWindow(L"BUTTON", L"Simpan", WS_VISIBLE | WS_CHILD, 318, 260, 82, 26, hwnd, (HMENU)ID_BTN_SAVE_CLOSE, NULL, NULL);
 
-        HWND controls[] = { hTitle, hTitleDragDetail, hSubTitle, hLblX, hLblY, hLblDelay, hLstActions, hLstDragPoints, hEditX, hEditY, hEditDelay, hBtnUpdateAct, hBtnMoveUp, hBtnMoveDown, hBtnEditorPickCoord, hBtnDeleteAct, btnSaveClose };
+        SetWindowSubclass(hEditX, EditXySubclassProc, 1, 0);
+        SetWindowSubclass(hEditY, EditXySubclassProc, 2, 0);
+        SetWindowSubclass(hEditDelay, EditXySubclassProc, 3, 0);
+
+        HWND controls[] = { hTitle, hTitleDragDetail, hSubTitle, hLblX, hLblY, hLblDelay, hLstActions, hLstDragPoints, hEditX, hEditY, hEditDelay, hBtnUpdateAct, hBtnMoveUp, hBtnMoveDown, hBtnEditorPickCoord, hBtnDeleteAct, hBtnEditorSaveClose };
         for (HWND hCtrl : controls) {
             SendMessage(hCtrl, WM_SETFONT, (WPARAM)g_hFontSegoeUI, TRUE);
         }
 
         PopulateActionList();
+
+        EnableWindow(hEditX, FALSE);
+        EnableWindow(hEditY, FALSE);
+        EnableWindow(hEditDelay, FALSE);
+        EnableWindow(hBtnUpdateAct, FALSE);
+        EnableWindow(hBtnEditorSaveClose, FALSE);
         SetActionListOperationButtonsState(false, false);
         break;
     }
@@ -1067,7 +1103,13 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         int wmId = LOWORD(wParam);
         int wmEvent = HIWORD(wParam);
 
-        if (wmId == ID_LST_ACTIONS && wmEvent == LBN_SELCHANGE) {
+        if ((wmId == ID_EDIT_X || wmId == ID_EDIT_Y || wmId == ID_EDIT_DELAY) && wmEvent == EN_CHANGE) {
+            if (!g_isProgrammaticChange) {
+                if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, TRUE);
+                g_editorHasChanges = true;
+            }
+        }
+        else if (wmId == ID_LST_ACTIONS && wmEvent == LBN_SELCHANGE) {
             int selIdx = (int)SendMessage(hLstActions, LB_GETCURSEL, 0, 0);
             UpdateEditorFieldsFromSelectedAction(hwnd, selIdx);
         }
@@ -1080,7 +1122,11 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (pointIdx >= 0 && pointIdx < (int)evt.path.size()) {
                     const DragPoint& pt = evt.path[pointIdx];
 
-                    SetActionEditControlsState(true);
+                    g_isProgrammaticChange = true;
+                    EnableWindow(hEditX, TRUE);
+                    EnableWindow(hEditY, TRUE);
+                    EnableWindow(hEditDelay, TRUE);
+                    if (hBtnUpdateAct) EnableWindow(hBtnUpdateAct, FALSE);
 
                     wchar_t buf[64];
                     swprintf_s(buf, 64, L"%d", pt.x);
@@ -1092,6 +1138,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     wchar_t bufDelay[64];
                     swprintf_s(bufDelay, 64, L"%g", pt.delay);
                     SetWindowTextW(hEditDelay, bufDelay);
+                    g_isProgrammaticChange = false;
 
                     if (hBtnEditorPickCoord) EnableWindow(hBtnEditorPickCoord, TRUE);
                 }
@@ -1111,13 +1158,25 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int newY = _wtoi(bufY);
                 double newDelay = _wtof(bufDelay);
 
-                if (selPointIdx >= 0 && selPointIdx < (int)g_events[selActionIdx].path.size()) {
+                bool isEditingDragPoint = (selPointIdx >= 0 && selPointIdx < (int)g_events[selActionIdx].path.size());
+
+                if (isEditingDragPoint) {
                     g_events[selActionIdx].path[selPointIdx].x = newX;
                     g_events[selActionIdx].path[selPointIdx].y = newY;
                     g_events[selActionIdx].path[selPointIdx].delay = newDelay;
+                    if (selPointIdx == 0) {
+                        g_events[selActionIdx].start_x = newX;
+                        g_events[selActionIdx].start_y = newY;
+                    }
+                    if (selPointIdx == (int)g_events[selActionIdx].path.size() - 1) {
+                        g_events[selActionIdx].end_x = newX;
+                        g_events[selActionIdx].end_y = newY;
+                    }
 
                     PopulateDragPointsList(g_events[selActionIdx]);
                     SendMessage(hLstDragPoints, LB_SETCURSEL, selPointIdx, 0);
+                    PopulateActionList();
+                    SendMessage(hLstActions, LB_SETCURSEL, selActionIdx, 0);
                 } else {
                     if (g_events[selActionIdx].type == ACTION_CLICK) {
                         g_events[selActionIdx].end_x = newX;
@@ -1133,6 +1192,14 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
 
                 g_editorHasChanges = true;
+                if (hBtnEditorSaveClose) EnableWindow(hBtnEditorSaveClose, TRUE);
+
+                // Kembalikan fokus ke list
+                if (isEditingDragPoint && hLstDragPoints && IsWindowVisible(hLstDragPoints)) {
+                    SetFocus(hLstDragPoints);
+                } else if (hLstActions) {
+                    SetFocus(hLstActions);
+                }
             } else {
                 MessageBoxW(hwnd, L"Pilih terlebih dahulu aksi yang ingin di-update dari daftar!", L"Peringatan", MB_OK | MB_ICONWARNING);
             }
@@ -1191,6 +1258,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         hBtnMoveDown = NULL;
         hBtnDeleteAct = NULL;
         hBtnEditorPickCoord = NULL;
+        hBtnEditorSaveClose = NULL;
         EnableWindow(hMainWnd, TRUE);
         SetForegroundWindow(hMainWnd);
         break;
