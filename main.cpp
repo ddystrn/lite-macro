@@ -38,6 +38,7 @@
 #define ID_MP_RADIO_PAUSE 308
 #define ID_MP_BTN_START 309
 #define ID_MP_BTN_LOAD_CFG 310
+#define ID_MP_BTN_SAVE_CFG 312
 #define ID_MP_CHK_LOCK 311
 
 // ID Control Dialog Editor Script
@@ -127,7 +128,7 @@ HWND hLstActions = NULL, hEditX = NULL, hEditY = NULL, hEditDelay = NULL, hBtnUp
 HWND hTitleDragDetail = NULL, hLstDragPoints = NULL;
 
 // Handle UI Mouse Picker
-HWND mp_hTextX, mp_hTextY, mp_hHexColor, mp_hStatus, mp_hConfigStatus, mp_hBtnStart, mp_hBtnLoadConfig, mp_hBtnPickCoord, mp_hBtnPickColor, mp_hBtnPickBoth;
+HWND mp_hTextX, mp_hTextY, mp_hHexColor, mp_hStatus, mp_hConfigStatus, mp_hBtnStart, mp_hBtnLoadConfig, mp_hBtnSaveConfig, mp_hBtnPickCoord, mp_hBtnPickColor, mp_hBtnPickBoth;
 HWND mp_hRadioStop, mp_hRadioPause, mp_hGroupTrigger;
 HWND mp_hLblTarget, mp_hChkLock;
 
@@ -146,6 +147,7 @@ void ResizeMainWindow(bool expand);
 void PopulateDragPointsList(const MacroEvent& evt);
 void ClearActionEditFields();
 void EnableGlobalCrosshair(bool enable);
+void SavePickerConfig();
 
 // Mouse Picker Helper Functions
 std::wstring ColorToHex(COLORREF color) {
@@ -1208,6 +1210,7 @@ void ResizeMainWindow(bool expand) {
     ShowWindow(mp_hStatus, showCmd);
     ShowWindow(mp_hConfigStatus, showCmd);
     ShowWindow(mp_hBtnStart, showCmd);
+    ShowWindow(mp_hBtnSaveConfig, showCmd);
     ShowWindow(mp_hBtnLoadConfig, showCmd);
     ShowWindow(mp_hBtnPickCoord, showCmd);
     ShowWindow(mp_hBtnPickColor, showCmd);
@@ -1280,10 +1283,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hChkAlwaysTop = CreateWindow(L"BUTTON", L"Always on Top", WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX, 12, 172, 160, 20, hwnd, (HMENU)ID_CHK_ALWAYS_TOP, NULL, NULL);
 
-        hBtnLoad = CreateWindow(L"BUTTON", L"Load Macro", WS_VISIBLE | WS_CHILD, 12, 196, 124, 26, hwnd, (HMENU)ID_BTN_LOAD, NULL, NULL);
-        hBtnSave = CreateWindow(L"BUTTON", L"Save Macro", WS_VISIBLE | WS_CHILD, 144, 196, 124, 26, hwnd, (HMENU)ID_BTN_SAVE, NULL, NULL);
-        hBtnEdit = CreateWindow(L"BUTTON", L"Edit Script", WS_VISIBLE | WS_CHILD, 12, 226, 256, 28, hwnd, (HMENU)ID_BTN_EDIT, NULL, NULL);
+        // Posisi Tombol Save Macro di kiri (12) dan Load Macro di kanan (144)
+        hBtnSave = CreateWindow(L"BUTTON", L"Save Macro", WS_VISIBLE | WS_CHILD, 12, 196, 124, 26, hwnd, (HMENU)ID_BTN_SAVE, NULL, NULL);
+        hBtnLoad = CreateWindow(L"BUTTON", L"Load Macro", WS_VISIBLE | WS_CHILD, 144, 196, 124, 26, hwnd, (HMENU)ID_BTN_LOAD, NULL, NULL);
         
+        hBtnEdit = CreateWindow(L"BUTTON", L"Edit Script", WS_VISIBLE | WS_CHILD, 12, 226, 256, 28, hwnd, (HMENU)ID_BTN_EDIT, NULL, NULL);
         hBtnTogglePicker = CreateWindow(L"BUTTON", L"Mouse Picker", WS_VISIBLE | WS_CHILD, 12, 258, 256, 28, hwnd, (HMENU)ID_BTN_TOGGLE_PICKER, NULL, NULL);
 
         // --- Kontrol Mouse Picker ---
@@ -1306,7 +1310,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         mp_hRadioPause = CreateWindowW(L"BUTTON", L"Pause", WS_CHILD | BS_AUTORADIOBUTTON, 90, 420, 70, 20, hwnd, (HMENU)ID_MP_RADIO_PAUSE, NULL, NULL);
 
         mp_hBtnStart = CreateWindowW(L"BUTTON", L"Mulai Deteksi", WS_CHILD | BS_DEFPUSHBUTTON, 12, 451, 256, 27, hwnd, (HMENU)ID_MP_BTN_START, NULL, NULL);
-        mp_hBtnLoadConfig = CreateWindowW(L"BUTTON", L"Load Config", WS_CHILD, 12, 482, 256, 27, hwnd, (HMENU)ID_MP_BTN_LOAD_CFG, NULL, NULL);
+        
+        mp_hBtnSaveConfig = CreateWindowW(L"BUTTON", L"Save Config", WS_CHILD, 12, 482, 124, 27, hwnd, (HMENU)ID_MP_BTN_SAVE_CFG, NULL, NULL);
+        mp_hBtnLoadConfig = CreateWindowW(L"BUTTON", L"Load Config", WS_CHILD, 144, 482, 124, 27, hwnd, (HMENU)ID_MP_BTN_LOAD_CFG, NULL, NULL);
+
         mp_hConfigStatus = CreateWindowW(L"STATIC", L"Config: picker.ini", WS_CHILD, 12, 513, 256, 18, hwnd, NULL, NULL, NULL);
         mp_hStatus = CreateWindowW(L"STATIC", L"Status: Standby", WS_CHILD, 12, 533, 256, 18, hwnd, NULL, NULL, NULL);
 
@@ -1315,7 +1322,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SendMessage(hCtrl, WM_SETFONT, (WPARAM)g_hFontSegoeUI, TRUE);
         }
 
-        HWND pickerControls[] = { mp_hTextX, mp_hTextY, mp_hHexColor, mp_hStatus, mp_hConfigStatus, mp_hBtnStart, mp_hBtnLoadConfig, mp_hBtnPickCoord, mp_hBtnPickColor, mp_hBtnPickBoth, mp_hRadioStop, mp_hRadioPause, mp_hGroupTrigger, mp_hLblTarget, mp_hChkLock };
+        HWND pickerControls[] = { mp_hTextX, mp_hTextY, mp_hHexColor, mp_hStatus, mp_hConfigStatus, mp_hBtnStart, mp_hBtnSaveConfig, mp_hBtnLoadConfig, mp_hBtnPickCoord, mp_hBtnPickColor, mp_hBtnPickBoth, mp_hRadioStop, mp_hRadioPause, mp_hGroupTrigger, mp_hLblTarget, mp_hChkLock };
         for (HWND hCtrl : pickerControls) {
             SendMessage(hCtrl, WM_SETFONT, (WPARAM)g_hFontSegoeUI, TRUE);
         }
@@ -1463,6 +1470,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 EnableGlobalCrosshair(false);
                 SetWindowTextW(mp_hStatus, L"Status: Dibatalkan.");
                 SetWindowTextW(mp_hBtnPickBoth, L"Pick Keduanya (Koordinat dan Warna)");
+            }
+        }
+        else if (wmId == ID_MP_BTN_SAVE_CFG) {
+            wchar_t szFile[MAX_PATH] = { 0 };
+            OPENFILENAMEW ofn = { 0 };
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFilter = L"Configuration Files (*.ini)\0*.ini\0All Files (*.*)\0*.*\0";
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.lpstrTitle = L"Simpan File Konfigurasi Picker (.ini)";
+            ofn.lpstrDefExt = L"ini";
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+
+            if (GetSaveFileNameW(&ofn) == TRUE) {
+                wcscpy_s(mp_iniFilePath, MAX_PATH, szFile);
+                SavePickerConfig();
+                LoadPickerConfig();
+                SetWindowTextW(mp_hStatus, L"Status: Konfigurasi Picker berhasil disimpan!");
             }
         }
         else if (wmId == ID_MP_BTN_LOAD_CFG) {
