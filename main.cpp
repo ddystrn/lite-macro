@@ -148,6 +148,7 @@ void PopulateDragPointsList(const MacroEvent& evt);
 void ClearActionEditFields();
 void EnableGlobalCrosshair(bool enable);
 void SavePickerConfig();
+void LoadPickerConfig();
 
 // Mouse Picker Helper Functions
 std::wstring ColorToHex(COLORREF color) {
@@ -986,8 +987,9 @@ void UpdateEditorFieldsFromSelectedAction(HWND hDlg, int index) {
         swprintf_s(buf, 64, L"%d", posY);
         SetWindowTextW(hEditY, buf);
 
-        swprintf_s(buf, 64, L"%.2f", evt.delay);
-        SetWindowTextW(hEditDelay, buf);
+        wchar_t bufDelay[64];
+        swprintf_s(bufDelay, 64, L"%g", evt.delay);
+        SetWindowTextW(hEditDelay, bufDelay);
 
         SetActionListOperationButtonsState(true, true);
     }
@@ -1087,8 +1089,9 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     swprintf_s(buf, 64, L"%d", pt.y);
                     SetWindowTextW(hEditY, buf);
 
-                    swprintf_s(buf, 64, L"%.2f", pt.delay);
-                    SetWindowTextW(hEditDelay, buf);
+                    wchar_t bufDelay[64];
+                    swprintf_s(bufDelay, 64, L"%g", pt.delay);
+                    SetWindowTextW(hEditDelay, bufDelay);
 
                     if (hBtnEditorPickCoord) EnableWindow(hBtnEditorPickCoord, TRUE);
                 }
@@ -1108,9 +1111,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int newY = _wtoi(bufY);
                 double newDelay = _wtof(bufDelay);
 
-                // Cek apakah yang sedang dipilih adalah titik path dari Drag atau aksi utama
                 if (selPointIdx >= 0 && selPointIdx < (int)g_events[selActionIdx].path.size()) {
-                    // Update titik path tertentu pada aksi Drag
                     g_events[selActionIdx].path[selPointIdx].x = newX;
                     g_events[selActionIdx].path[selPointIdx].y = newY;
                     g_events[selActionIdx].path[selPointIdx].delay = newDelay;
@@ -1118,7 +1119,6 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     PopulateDragPointsList(g_events[selActionIdx]);
                     SendMessage(hLstDragPoints, LB_SETCURSEL, selPointIdx, 0);
                 } else {
-                    // Update aksi utama (Click atau posisi akhir Drag)
                     if (g_events[selActionIdx].type == ACTION_CLICK) {
                         g_events[selActionIdx].end_x = newX;
                         g_events[selActionIdx].end_y = newY;
@@ -1332,6 +1332,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         hBtnEdit = CreateWindow(L"BUTTON", L"Edit Script", WS_VISIBLE | WS_CHILD, 12, 226, 256, 28, hwnd, (HMENU)ID_BTN_EDIT, NULL, NULL);
         hBtnTogglePicker = CreateWindow(L"BUTTON", L"Mouse Picker", WS_VISIBLE | WS_CHILD, 12, 258, 256, 28, hwnd, (HMENU)ID_BTN_TOGGLE_PICKER, NULL, NULL);
 
+        // --- Kontrol Mouse Picker ---
         CreateWindowW(L"STATIC", L"X:", WS_CHILD, 12, 294, 16, 20, hwnd, NULL, NULL, NULL);
         mp_hTextX = CreateWindowW(L"EDIT", L"100", WS_CHILD | WS_BORDER | ES_NUMBER, 30, 292, 48, 23, hwnd, NULL, NULL, NULL);
         CreateWindowW(L"STATIC", L"Y:", WS_CHILD, 86, 294, 16, 20, hwnd, NULL, NULL, NULL);
