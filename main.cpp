@@ -55,7 +55,7 @@
 #define ID_LST_DRAG_POINTS 210
 #define ID_BTN_EDITOR_PICK_COORD 211
 
-// ID Hotkey Global Lite Macro (ESC dihapus)
+// ID Hotkey Global Lite Macro
 #define HOTKEY_F8 1
 #define HOTKEY_F9 2
 #define HOTKEY_F10 4
@@ -83,6 +83,8 @@ std::atomic<bool> g_isRecording(false);
 std::atomic<bool> g_isPlaying(false);
 std::atomic<bool> g_isPaused(false);
 HHOOK g_mouseHook = NULL;
+HHOOK mp_mouseHook = NULL; // <-- Variabel yang sebelumnya terlewat
+HHOOK g_keyboardHook = NULL;
 HFONT g_hFontSegoeUI = NULL;
 HINSTANCE g_hInstance = NULL;
 
@@ -98,6 +100,8 @@ wchar_t g_iniPath[MAX_PATH] = { 0 };
 bool g_hasUnsavedChanges = false;
 bool g_editorHasChanges = false;
 bool g_isPickerExpanded = false;
+
+// Flag pencegah pemicu EN_CHANGE saat setText programmatically
 bool g_isProgrammaticChange = false;
 
 // Variabel Mouse Picker
@@ -106,7 +110,6 @@ bool mp_isPickingCoord = false;
 bool mp_isPickingColor = false;
 bool mp_isPickingBoth = false;
 HANDLE mp_hThread = NULL;
-HHOOK mp_mouseHook = NULL;
 HCURSOR mp_customCursor = NULL;
 
 // Variabel Tambahan Editor Pick Koordinat
@@ -383,6 +386,50 @@ void EnableGlobalCrosshair(bool enable) {
     }
 }
 
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode >= 0 && wParam == WM_KEYDOWN) {
+        KBDLLHOOKSTRUCT* pKeyboard = (KBDLLHOOKSTRUCT*)lParam;
+        if (pKeyboard->vkCode == VK_ESCAPE) {
+            if (mp_isPickingCoord || mp_isPickingColor || mp_isPickingBoth || g_isEditorPickingCoord || g_isRecording) {
+                if (mp_isPickingCoord || mp_isPickingColor || mp_isPickingBoth) {
+                    mp_isPickingCoord = false;
+                    mp_isPickingColor = false;
+                    mp_isPickingBoth = false;
+                    EnableGlobalCrosshair(false);
+                    SetWindowTextW(mp_hStatus, L"Status: Pengambilan dibatalkan (ESC).");
+                    SetWindowTextW(mp_hBtnPickCoord, L"Pick Koordinat");
+                    SetWindowTextW(mp_hBtnPickColor, L"Pick Warna");
+                    SetWindowTextW(mp_hBtnPickBoth, L"Pick Keduanya (Koordinat dan Warna)");
+                }
+
+                if (g_isEditorPickingCoord) {
+                    g_isEditorPickingCoord = false;
+                    EnableGlobalCrosshair(false);
+                    if (hBtnEditorPickCoord) SetWindowTextW(hBtnEditorPickCoord, L"Ambil Koordinat");
+                    SetWindowTextW(hStatusLabel, L"Status: Pengambilan koordinat diedit dibatalkan.");
+                }
+
+                if (g_isRecording) {
+                    StopRecording();
+                }
+
+                if (mp_mouseHook) {
+                    UnhookWindowsHookEx(mp_mouseHook);
+                    mp_mouseHook = NULL;
+                }
+
+                if (g_keyboardHook) {
+                    UnhookWindowsHookEx(g_keyboardHook);
+                    g_keyboardHook = NULL;
+                }
+
+                return 1;
+            }
+        }
+    }
+    return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
+}
+
 LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
         if (wParam == WM_LBUTTONDOWN) {
@@ -398,6 +445,7 @@ LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     g_isEditorPickingCoord = false;
                     UnhookWindowsHookEx(mp_mouseHook);
                     mp_mouseHook = NULL;
+                    if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                     EnableGlobalCrosshair(false);
                     if (hBtnEditorPickCoord) SetWindowTextW(hBtnEditorPickCoord, L"Ambil Koordinat");
                     return 1;
@@ -415,6 +463,7 @@ LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     mp_isPickingCoord = false;
                     UnhookWindowsHookEx(mp_mouseHook);
                     mp_mouseHook = NULL;
+                    if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                     EnableGlobalCrosshair(false);
                     SavePickerConfig();
                     SetWindowTextW(mp_hStatus, L"Status: Koordinat diambil dan disimpan!");
@@ -432,6 +481,7 @@ LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     mp_isPickingColor = false;
                     UnhookWindowsHookEx(mp_mouseHook);
                     mp_mouseHook = NULL;
+                    if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                     EnableGlobalCrosshair(false);
                     SavePickerConfig();
                     SetWindowTextW(mp_hStatus, L"Status: Warna diambil dan disimpan!");
@@ -456,6 +506,7 @@ LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     mp_isPickingBoth = false;
                     UnhookWindowsHookEx(mp_mouseHook);
                     mp_mouseHook = NULL;
+                    if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                     EnableGlobalCrosshair(false);
                     SavePickerConfig();
                     SetWindowTextW(mp_hStatus, L"Status: Koordinat dan Warna diambil!");
@@ -601,12 +652,13 @@ void StartRecording() {
 
     g_currentScriptName = L"Hasil Rekaman Baru";
     SetWindowText(hScriptLabel, (L"Script: " + g_currentScriptName).c_str());
-    SetWindowText(hStatusLabel, L"Status: Merekam... (F8: Stop)");
+    SetWindowText(hStatusLabel, L"Status: Merekam... (F8: Stop, ESC: Batal)");
 
     UpdateRecButtonUI(true);
     EnableWindow(hBtnPlay, FALSE);
 
     g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, GetModuleHandle(NULL), 0);
+    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
 }
 
 void StopRecording() {
@@ -615,6 +667,10 @@ void StopRecording() {
         if (g_mouseHook) {
             UnhookWindowsHookEx(g_mouseHook);
             g_mouseHook = NULL;
+        }
+        if (g_keyboardHook) {
+            UnhookWindowsHookEx(g_keyboardHook);
+            g_keyboardHook = NULL;
         }
         std::wstring status = L"Status: Selesai (" + std::to_wstring(g_events.size()) + L" aksi terekam)";
         SetWindowText(hStatusLabel, status.c_str());
@@ -1166,6 +1222,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                     g_events[selActionIdx].path[selPointIdx].x = newX;
                     g_events[selActionIdx].path[selPointIdx].y = newY;
                     g_events[selActionIdx].path[selPointIdx].delay = newDelay;
+
                     if (selPointIdx == 0) {
                         g_events[selActionIdx].start_x = newX;
                         g_events[selActionIdx].start_y = newY;
@@ -1196,7 +1253,6 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 g_editorHasChanges = true;
                 if (hBtnEditorSaveClose) EnableWindow(hBtnEditorSaveClose, TRUE);
 
-                // Kembalikan fokus ke list
                 if (isEditingDragPoint && hLstDragPoints && IsWindowVisible(hLstDragPoints)) {
                     SetFocus(hLstDragPoints);
                 } else if (hLstActions) {
@@ -1210,13 +1266,17 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (!g_isEditorPickingCoord) {
                 g_isEditorPickingCoord = true;
                 EnableGlobalCrosshair(true);
-                SetWindowTextW(hBtnEditorPickCoord, L"Batal");
+                SetWindowTextW(hBtnEditorPickCoord, L"Batal (ESC)");
                 if (!mp_mouseHook) {
                     mp_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, GetModuleHandle(NULL), 0);
+                }
+                if (!g_keyboardHook) {
+                    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
                 }
             } else {
                 g_isEditorPickingCoord = false;
                 if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+                if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                 EnableGlobalCrosshair(false);
                 SetWindowTextW(hBtnEditorPickCoord, L"Ambil Koordinat");
             }
@@ -1231,6 +1291,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (g_isEditorPickingCoord) {
             g_isEditorPickingCoord = false;
             if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+            if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
             EnableGlobalCrosshair(false);
         }
         if (g_editorHasChanges) {
@@ -1248,6 +1309,7 @@ LRESULT CALLBACK EditorDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (g_isEditorPickingCoord) {
             g_isEditorPickingCoord = false;
             if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+            if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
             EnableGlobalCrosshair(false);
         }
         hLstActions = NULL;
@@ -1307,7 +1369,7 @@ void OpenScriptEditor(HWND hParent) {
 
 void ResizeMainWindow(bool expand) {
     g_isPickerExpanded = expand;
-    int clientH = expand ? 558 : 298; 
+    int clientH = expand ? 576 : 298; 
     RECT rc = { 0, 0, 280, clientH };
     DWORD dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     AdjustWindowRectEx(&rc, dwStyle, FALSE, 0);
@@ -1427,7 +1489,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         mp_hBtnLoadConfig = CreateWindowW(L"BUTTON", L"Load Config", WS_CHILD, 144, 482, 124, 27, hwnd, (HMENU)ID_MP_BTN_LOAD_CFG, NULL, NULL);
 
         mp_hConfigStatus = CreateWindowW(L"STATIC", L"Config: picker.ini", WS_CHILD, 12, 513, 256, 18, hwnd, NULL, NULL, NULL);
-        mp_hStatus = CreateWindowW(L"STATIC", L"Status: Standby", WS_CHILD, 12, 533, 256, 18, hwnd, NULL, NULL, NULL);
+        mp_hStatus = CreateWindowW(L"STATIC", L"Status: Standby", WS_CHILD, 12, 533, 256, 36, hwnd, NULL, NULL, NULL);
 
         HWND controls[] = { hStatusLabel, hScriptLabel, hBtnRec, hBtnPlay, hBtnPause, hGroupLoop, hLblLoopStatic, hEditLoop, hChkInfinite, hLblSpeedStatic, hCmbSpeed, hChkAlwaysTop, hBtnLoad, hBtnSave, hBtnEdit, hBtnTogglePicker };
         for (HWND hCtrl : controls) {
@@ -1533,14 +1595,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 mp_isPickingColor = false;
                 mp_isPickingBoth = false;
                 EnableGlobalCrosshair(true);
-                SetWindowTextW(mp_hStatus, L"Status: Klik pada titik koordinat layar...");
-                SetWindowTextW(mp_hBtnPickCoord, L"Batal");
+                SetWindowTextW(mp_hStatus, L"Status: Klik pada titik koordinat layar (ESC untuk batal)...");
+                SetWindowTextW(mp_hBtnPickCoord, L"Batal (ESC)");
                 if (!mp_mouseHook) {
                     mp_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, GetModuleHandle(NULL), 0);
+                }
+                if (!g_keyboardHook) {
+                    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
                 }
             } else {
                 mp_isPickingCoord = false;
                 if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+                if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                 EnableGlobalCrosshair(false);
                 SetWindowTextW(mp_hStatus, L"Status: Dibatalkan.");
                 SetWindowTextW(mp_hBtnPickCoord, L"Pick Koordinat");
@@ -1552,14 +1618,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 mp_isPickingCoord = false;
                 mp_isPickingBoth = false;
                 EnableGlobalCrosshair(true);
-                SetWindowTextW(mp_hStatus, L"Status: Klik pada warna di layar...");
-                SetWindowTextW(mp_hBtnPickColor, L"Batal");
+                SetWindowTextW(mp_hStatus, L"Status: Klik pada warna di layar (ESC untuk batal)...");
+                SetWindowTextW(mp_hBtnPickColor, L"Batal (ESC)");
                 if (!mp_mouseHook) {
                     mp_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, GetModuleHandle(NULL), 0);
+                }
+                if (!g_keyboardHook) {
+                    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
                 }
             } else {
                 mp_isPickingColor = false;
                 if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+                if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                 EnableGlobalCrosshair(false);
                 SetWindowTextW(mp_hStatus, L"Status: Dibatalkan.");
                 SetWindowTextW(mp_hBtnPickColor, L"Pick Warna");
@@ -1571,14 +1641,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 mp_isPickingCoord = false;
                 mp_isPickingColor = false;
                 EnableGlobalCrosshair(true);
-                SetWindowTextW(mp_hStatus, L"Status: Klik pada target untuk pick koordinat dan warna...");
-                SetWindowTextW(mp_hBtnPickBoth, L"Batal Pick");
+                SetWindowTextW(mp_hStatus, L"Status: Klik target untuk koordinat dan warna (ESC untuk batal)...");
+                SetWindowTextW(mp_hBtnPickBoth, L"Batal (ESC)");
                 if (!mp_mouseHook) {
                     mp_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, GetModuleHandle(NULL), 0);
+                }
+                if (!g_keyboardHook) {
+                    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
                 }
             } else {
                 mp_isPickingBoth = false;
                 if (mp_mouseHook) { UnhookWindowsHookEx(mp_mouseHook); mp_mouseHook = NULL; }
+                if (g_keyboardHook) { UnhookWindowsHookEx(g_keyboardHook); g_keyboardHook = NULL; }
                 EnableGlobalCrosshair(false);
                 SetWindowTextW(mp_hStatus, L"Status: Dibatalkan.");
                 SetWindowTextW(mp_hBtnPickBoth, L"Pick Keduanya (Koordinat dan Warna)");
@@ -1664,6 +1738,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         UnregisterHotKey(hwnd, HOTKEY_F10);
         if (g_hFontSegoeUI) DeleteObject(g_hFontSegoeUI);
         if (mp_mouseHook) UnhookWindowsHookEx(mp_mouseHook);
+        if (g_keyboardHook) UnhookWindowsHookEx(g_keyboardHook);
         EnableGlobalCrosshair(false);
         PostQuitMessage(0);
         break;
@@ -1706,7 +1781,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     InitIniPath();
     bool expandedInit = (GetPrivateProfileInt(L"Settings", L"PickerExpanded", 0, g_iniPath) == 1);
-    int initClientH = expandedInit ? 558 : 298;
+    int initClientH = expandedInit ? 576 : 298;
 
     RECT rc = { 0, 0, 280, initClientH };
     DWORD dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
